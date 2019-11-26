@@ -1,17 +1,19 @@
 import scipy.optimize as opt
 import numpy as np
 from math import *
-import matplotlib.pyplot as plt
 from random import random as rd
 
+# Plot Tools
+import matplotlib.pyplot as plt
 
-class RM (object):
+
+class Beam (object):
     
     def __init__(self):
         
         # Security Constants
-        self.COEF_SECURITY = 3.
-        self.COEF_SECURITY_DIST = 1.6
+        self.COEF_SECURITY = 1.
+        self.COEF_SECURITY_DIST = 1.
 
         self.N = 5 # First and last point are fixed and a third one is fixed on Y for the load
         
@@ -48,6 +50,11 @@ class RM (object):
         # Constrain Areas
         self.du = 30
         self.constrainAreas = [(-0.360,0.06,0.035), (-0.140,0.06,0.025)] # X, Y, R
+
+        # Graphics
+        self.cost_accumulated = []
+        self.tension_accumulated = []
+        self.section_accumulated = []
 
 
     #######################
@@ -116,7 +123,7 @@ class RM (object):
 
         rand_values_y[0] = (rd() * (0.25 - 0.0) + 0.0)
         rand_values_y[1] = (rd() * (0.3 - rand_values_y[0]) + rand_values_y[0])
-
+        
         ret = np.array([
             0.0,
             -0.175,
@@ -130,12 +137,29 @@ class RM (object):
             0.12,
         ])
 
+        """
+        ret = np.array([ 0.0,
+            -0.175,
+            -0.3,
+            -0.35,
+            -0.5,
+            0.0,
+            0.0,
+            0.06,
+            0.12,
+            0.12
+        ])
+        """
+        
         # a, h, b, c
         section = np.array([0.0] * self.N * 4)
-        for i in range(self.N * 4):
-            section[i] = (self.upperLimitSection - self.lowerLimitSection) * rd() + self.lowerLimitSection
-
         ret = np.concatenate((ret, section))
+
+        for i in range(self.N):
+            ret[self.section_a_start + i] = self.lowerLimitSection / 1000.
+            ret[self.section_h_start + i] = ((self.upperLimitSection - self.lowerLimitSection) * rd() + self.lowerLimitSection) / 1000.
+            ret[self.section_b_start + i] = ((self.upperLimitSection - self.lowerLimitSection) * rd() + self.lowerLimitSection) / 1000.
+            ret[self.section_c_start + i] = self.lowerLimitSection / 1000.
 
         return ret
         
@@ -248,10 +272,10 @@ class RM (object):
             for k in range(self.du):
                 
                 # Get the intermediary point P and height h
-                k = k / float(self.du)
-                P = P0 + vector * k
+                k  = k / float(self.du)
+                P  = P0 + vector * k
                 dh = self.h[i] + vector_dh * k
-                
+
                 # Iterate through every constrain area
                 for j in range(len(self.constrainAreas)):
                     x, y, r = self.constrainAreas[j]
@@ -271,21 +295,24 @@ class RM (object):
             sectionConstrains.append(self.b[i] - self.a[i])
 
             # h cannot be bigger than 3 times b | buckling prevention
-            sectionConstrains.append(self.h[i] / self.b[i] - 3)
+            sectionConstrains.append(self.h[i] / self.b[i] - 3.)
 
         # All the constrains must be positive
         sectionConstrains = np.array(sectionConstrains)
         tensionConstrains = np.array(tensionConstrains)
+
+        # Save Data for Graphics
+        self.tension_accumulated.append(tensionConstrains)
+
         tensionConstrains = np.ones(self.N - 1) * self.tensionLimit - abs(tensionConstrains)
         areaConstrains = np.array(areaConstrains)
 
         # Concatenate all the constrains
-        res = np.concatenate((areaConstrains, res))
+        # res = np.concatenate((areaConstrains, res))
         res = np.concatenate((tensionConstrains, res))
         res = np.concatenate((sectionConstrains, res))
-        
+
         return res
-                                         
 
     def cost_function(self, u):
                         
@@ -294,7 +321,7 @@ class RM (object):
         self.h = u[self.section_h_start: self.section_h_start + self.N]
         self.b = u[self.section_b_start: self.section_b_start + self.N]
         self.c = u[self.section_c_start: self.section_c_start + self.N]
-        
+
         # Set initial forces, inertia and section area
         self.set_init_forces()
         self.init_values()
@@ -307,7 +334,11 @@ class RM (object):
 
             averageArea = 0.5 * (self.area[1 + i] + self.area[i])
             vol += np.linalg.norm(P1 - P0) * averageArea
-                    
+
+        # Save Data for Graphic
+        self.cost_accumulated.append(vol * self.density)            
+        self.section_accumulated.append(u[self.section_a_start: self.section_c_start + self.N])
+        
         return vol * self.density
 
 
@@ -319,103 +350,56 @@ class RM (object):
         
         res = opt.minimize(self.cost_function, initSolution, bounds = boundaries, method = 'SLSQP', constraints = funConstrains, options={'maxiter': 10000, 'ftol': 1e-06, 'iprint': 1, 'disp': False, 'eps': 1.4901161193847656e-08})
 
+        self.cost_accumulated = np.array(self.cost_accumulated)
+        self.section_accumulated = np.array(self.section_accumulated)
+        self.tension_accumulated = np.array(self.tension_accumulated)
+
         return res
-    
+
 
 if __name__ == "__main__":
 
-    optimal_cost = 100000
-    for i in range(1):
-        rm = RM()
-        res = rm.find_opt()
-        print(i)
+    optimal_cost = 1e3
+    optimal_iter = 0
 
-        """
-        if rm.cost_accumulated[-1] < optimal_cost:
-            optimal_cost = rm.cost_accumulated[-1]
-            print(optimal_cost)
-            solutions = res
+    for i in range(10):
+
+        beam = Beam()
+        res = beam.find_opt()
+
+        # Save new optimal values
+        if beam.cost_accumulated[-1] < optimal_cost and res.success:
+            
+            optimal_cost = beam.cost_accumulated[-1]
+            optimal_iter += 1
+            
+            optimal_beam = beam
+            optimal_beam.x = res.x[beam.x_start: beam.x_start + beam.N]
+            optimal_beam.y = res.x[beam.y_start: beam.y_start + beam.N]
+
+        print '{:10s}   {:3d}   {:10s}   {:3d}   {:7s}   {:7.4f}'.format('solution num', i + 1, 'optimal iter', optimal_iter, 'cost', optimal_cost)
+
+    plt.axis('equal')
     
-    res = solutions
-    """
+    # Plot form
+    plt.plot(optimal_beam.x, optimal_beam.y, "-b", linestyle="--")
+    plt.plot(optimal_beam.x, optimal_beam.y + optimal_beam.h, "-b")
+    plt.plot(optimal_beam.x, optimal_beam.y - optimal_beam.h, "-b")
+    
+    plt.scatter(optimal_beam.x, optimal_beam.y)
+    plt.show()
+
+    # Plot cost evolution
+    plt.plot(range(len(optimal_beam.cost_accumulated)), optimal_beam.cost_accumulated)
+    plt.show()
+
+    # Cost tensions 3 points
+    plt.plot(range(len(optimal_beam.tension_accumulated)), optimal_beam.tension_accumulated[:,0])
+
+    plt.plot(range(len(optimal_beam.tension_accumulated)), optimal_beam.tension_accumulated[:,1])
+
+    plt.plot(range(len(optimal_beam.tension_accumulated)), optimal_beam.tension_accumulated[:,2])
+
+    plt.show()
 
     np.set_printoptions(precision=7)
-
-    fig, ax = plt.subplots()
-    plt.axis('equal')
-
-    posx = []
-    posy = []
-
-    posx1 = []
-    posy1 = []
-
-    #init = rm.get_init_state()
-    for i in range(rm.N):
-        x = res.x[i]
-        y = res.x[rm.N + i]
-
-        #x1 = init[i]
-        #y1 = init[rm.N + i]    
-        
-        #posx1.append(x1)
-        #posy1.append(y1)
-        
-        posx.append(x)
-        posy.append(y)
-        
-    posx = np.array(posx)
-    posy = np.array(posy)
-
-    #posx1 = np.array(posx1) 
-    #posy1 = np.array(posy1)
-
-    for j in range(len(rm.constrainAreas)):
-        circle = plt.Circle(rm.constrainAreas[j][0:2], rm.constrainAreas[j][2], color='r', alpha=0.4)
-        ax.add_artist(circle)
-
-    #print "section sol"
-    #print res.x[rm.section_start: rm.section_start + 4]
-    #print "section init"
-    #print init[rm.section_start: rm.section_start + 4]
-
-    #print posx1, posy1
-    print posx, posy
-    
-
-    plt.plot(posx, posy, "-b", linestyle="--")
-    plt.plot(posx, posy + np.array([rm.h]*rm.N), "-b")
-    plt.plot(posx, posy - np.array([rm.h]*rm.N), "-b")
-    
-    plt.scatter(posx, posy)
-    plt.show()
-
-
-    """
-    plt.scatter(posx1, posy1)
-    plt.plot(posx1, posy1, "-r")
-    plt.show()
-    """
-    
-    """
-    rm.section_accumulated = np.array(rm.section_accumulated)
-    plt.plot(range(len(rm.section_accumulated)), rm.section_accumulated)
-    plt.show()
-
-    rm.cost_accumulated = np.array(rm.cost_accumulated)
-    plt.plot(range(len(rm.cost_accumulated)), rm.cost_accumulated)
-    plt.show()
-
-    rm.tension_accumulated = np.array(rm.tension_accumulated)
-    plt.plot(range(len(rm.tension_accumulated)), rm.tension_accumulated[:,0])
-    plt.show()
-
-    plt.plot(range(len(rm.tension_accumulated)), rm.tension_accumulated[:,1])
-    plt.show()
-
-    plt.plot(range(len(rm.tension_accumulated)), rm.tension_accumulated[:,2])
-    plt.show()
-
-    plt.plot(range(len(rm.tension_accumulated)), rm.tension_accumulated[:,3])
-    plt.show()
-    """
