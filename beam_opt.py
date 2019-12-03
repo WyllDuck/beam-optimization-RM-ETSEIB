@@ -13,7 +13,7 @@ class Beam (object):
         
         # Security Constants
         self.COEF_SECURITY = 1.7
-        self.COEF_SECURITY_DIST = 1.5
+        self.COEF_SECURITY_DIST = 1.3
 
         self.N = 5 # First and last point are fixed and a third one is fixed on Y for the load
         
@@ -36,20 +36,29 @@ class Beam (object):
         self.b = [0.001] * self.N  # Longitud
         self.c = [0.001] * self.N  # Wide Side Bar
 
-        self.lowerLimitSection = 1.
-        self.upperLimitSection = 20.
+        self.lowerLimitSection_a = 1.5
+        self.upperLimitSection_a = 1.5
+        
+        self.lowerLimitSection_h = 1.5
+        self.upperLimitSection_h = 20.
+        
+        self.lowerLimitSection_b = 1.5
+        self.upperLimitSection_b = 20.
+        
+        self.lowerLimitSection_c = 1.5
+        self.upperLimitSection_c = 1.5
         
         # Properties of the beam 
         self.area = [0.001] * self.N
         self.I_X  = [0.001] * self.N
         self.I_Y  = [0.001] * self.N
         
-        self.tensionLimit = 200*1e6 / float(self.COEF_SECURITY) # [MPa] 
+        self.tensionLimit = 255*1e6 / float(self.COEF_SECURITY) # [MPa] 
         self.density = 7850 # [kg/m**3] Steel ASTM A36
         
         # Constrain Areas
         self.du = 30
-        self.constrainAreasCircles = [(-0.360,0.06,0.035), (-0.140,0.06,0.025)] # X, Y, R
+        self.constrainAreasCircles = [(-0.360,0.06,0.035), (-0.140,0.06,0.040 / self.COEF_SECURITY_DIST)] # X, Y, R
         self.constrainAreasRect = [(-0.5, 0.08, 0.08, -0.08)]
 
         # Graphics
@@ -161,10 +170,10 @@ class Beam (object):
         ret = np.concatenate((ret, section))
 
         for i in range(self.N):
-            ret[self.section_a_start + i] = self.lowerLimitSection / 1000.
-            ret[self.section_h_start + i] = ((self.upperLimitSection - self.lowerLimitSection * 2) * rd() + self.lowerLimitSection) * 2 / 1000.
-            ret[self.section_b_start + i] = ((self.upperLimitSection - self.lowerLimitSection * 2) * rd() + self.lowerLimitSection) * 2 / 1000.
-            ret[self.section_c_start + i] = self.lowerLimitSection / 1000.
+            ret[self.section_a_start + i] = ((self.upperLimitSection_a - self.lowerLimitSection_a) * rd() + self.lowerLimitSection_a) * 1 / 1000.
+            ret[self.section_h_start + i] = ((self.upperLimitSection_h - self.lowerLimitSection_h) * rd() + self.lowerLimitSection_h) * 1 / 1000.
+            ret[self.section_b_start + i] = ((self.upperLimitSection_b - self.lowerLimitSection_b) * rd() + self.lowerLimitSection_b) * 1 / 1000.
+            ret[self.section_c_start + i] = ((self.upperLimitSection_c - self.lowerLimitSection_c) * rd() + self.lowerLimitSection_c) * 1 / 1000.
 
         return ret
         
@@ -196,20 +205,20 @@ class Beam (object):
         
         # a, h, b, c
         for i in range(self.N):
-            ret[self.section_a_start + i, 0] = self.lowerLimitSection / 1000.
-            ret[self.section_a_start + i, 1] = self.lowerLimitSection / 1000.
+            ret[self.section_a_start + i, 0] = self.lowerLimitSection_a / 1000.
+            ret[self.section_a_start + i, 1] = self.lowerLimitSection_a / 1000.
             
         for i in range(self.N):
-            ret[self.section_h_start + i, 0] = self.lowerLimitSection / 1000.
-            ret[self.section_h_start + i, 1] = self.upperLimitSection / 1000.
+            ret[self.section_h_start + i, 0] = self.lowerLimitSection_h / 1000.
+            ret[self.section_h_start + i, 1] = self.upperLimitSection_h / 1000.
         
         for i in range(self.N):
-            ret[self.section_b_start + i, 0] = self.lowerLimitSection / 1000.
-            ret[self.section_b_start + i, 1] = self.upperLimitSection / 1000.
+            ret[self.section_b_start + i, 0] = self.lowerLimitSection_b / 1000.
+            ret[self.section_b_start + i, 1] = self.upperLimitSection_b / 1000.
 
         for i in range(self.N):
-            ret[self.section_c_start + i, 0] = self.lowerLimitSection / 1000.
-            ret[self.section_c_start + i, 1] = self.lowerLimitSection / 1000.
+            ret[self.section_c_start + i, 0] = self.lowerLimitSection_c / 1000.
+            ret[self.section_c_start + i, 1] = self.lowerLimitSection_c / 1000.
         
         return ret
 
@@ -239,7 +248,7 @@ class Beam (object):
         T = sin(alpha) * self.cte_values[self.Fx_start + i] + cos(alpha) * self.cte_values[self.Fy_start + i]
         
         if lastN:
-            return 0.0, abs(T / self.area[i]) * sqrt(3)
+            return 0.0, abs(T / self.area[i]) * sqrt(3), N, T
 
         # Get the moment of the beam at it's end
         M = T * sqrt(deltaX ** 2 + deltaY ** 2) + self.cte_values[self.M_start + i]
@@ -253,7 +262,7 @@ class Beam (object):
         self.cte_values[self.Fy_start + 1 + i] += - sin(alpha) * N + cos(alpha) * T
         self.cte_values[self.M_start + 1 + i] += M
                 
-        return tensionMaxSection, tensionVonMises
+        return tensionMaxSection, tensionVonMises, N, T
     
         
     def constrains(self, u):
@@ -277,6 +286,11 @@ class Beam (object):
         sectionConstrains  = []
         tensionConstrains  = []
         distanceConstrains = []
+
+        self.tensionMaxSectionBeam = []
+        self.tensionVonMisesBeam = []
+        self.NBeam = []
+        self.TBeam = []
 
         ### AREA CONSTRAINS (X, Y, R)
         for i in range(self.N - 1):
@@ -315,13 +329,18 @@ class Beam (object):
                 """
 
         for i in range(self.N):
-            tensionMaxSection, tensionVonMises = self.model(u, i)
+            tensionMaxSection, tensionVonMises, N, T = self.model(u, i)
     
             ### LIMIT TENSION
             tensionConstrains.append(tensionMaxSection)
 
             ### VON MISES TENSION
             tensionConstrains.append(tensionVonMises)
+
+            self.tensionMaxSectionBeam.append(tensionMaxSection)
+            self.tensionVonMisesBeam.append(tensionVonMises)
+            self.NBeam.append(N)
+            self.TBeam.append(T)
 
         ### SECTION CONSTRAINS
         for i in range(self.N):
@@ -480,13 +499,26 @@ def plot_profile(x, y, h):
 
     return np.array(perimeter)
 
+def save_csv (beam, filename = "beam"):
+
+    fe = open("{}.csv".format(filename), "w")
+
+    line = "x, y, a, h, b, c, sigma_section, von_mises, N, T, M, Fx, Fy\n"
+    fe.write(line)
+    for i in range(len(beam.x)):
+        line = "{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}\n".format( beam.x[i], beam.y[i], beam.a[i], beam.h[i], beam.b[i], beam.c[i],
+                                                                              beam.tensionMaxSectionBeam[i], beam.tensionVonMisesBeam[i], beam.NBeam[i], beam.TBeam[i],
+                                                                              beam.cte_values[beam.M_start + i], beam.cte_values[beam.Fx_start + i], beam.cte_values[beam.Fy_start + i])
+        fe.write(line)
+
+    fe.close()
 
 if __name__ == "__main__":
 
     optimal_cost = 1e3
     optimal_iter = 0
 
-    for i in range(5):
+    for i in range(100):
 
         beam = Beam()
         res = beam.find_opt()
@@ -555,5 +587,7 @@ if __name__ == "__main__":
     plt.plot(range(len(optimal_beam.tension_accumulated)), optimal_beam.tension_accumulated[:,0] / 1e6)
     plt.plot(range(len(optimal_beam.tension_accumulated)), optimal_beam.tension_accumulated[:,1] / 1e6)
     plt.plot(range(len(optimal_beam.tension_accumulated)), optimal_beam.tension_accumulated[:,2] / 1e6)
-
     plt.show()
+
+    # Save information into csv
+    save_csv(optimal_beam)
