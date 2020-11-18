@@ -1,2 +1,2 @@
 # beam-optimization-RM-ETSEIB
-This project aims to optimize the weight of a beam based on it requierements. The porgram was develloped to complete the task given by the resistence material class. 
+This project aims to optimize the weight of a beam based on some strength requierements. The program was developed to complete a project from the resistance material course. 
